@@ -1,62 +1,33 @@
-import os
-from flask import Flask, request, render_template, redirect, url_for, send_file
-from utils.utils import allowed_file, convert_audio_to_wav
-from utils.speech_to_text import convert_audio_to_text
+from flask import Flask, request, render_template
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 
+app = Flask(__name__)
 
+# Initialize the summarization model
+summarizer = pipeline(
+    task="summarization",
+    model="t5-small",
+    min_length=20,
+    max_length=40,
+    truncation=True,
+    model_kwargs={"cache_dir": '/Documents/Huggin_Face/'},
+)
 
-app=Flask(__name__)
-
-# Configuration
-UPLOAD_FOLDER='uploads'
-app.config['UPLOAD_FOLDER']=UPLOAD_FOLDER
-
-
-def create_upload_directory():
-    # Create the 'uploads' directory if it doesn't exist
-    if not os.path.exists(app.config['UPLOAD_FOLDER']):
-        os.makedirs(app.config['UPLOAD_FOLDER'])
-
-
-@app.route('/', methods=['GET', 'POST'])
-
+@app.route('/')
 def index():
-    if request.method == 'POST':
-        create_upload_directory()  # Ensure 'uploads' directory exists
+    return render_template("index.html")
 
-        if 'audio_file' not in request.files:
-            return redirect(request.url)
+@app.route('/summarize', methods=['POST'])
+def summarize_text():
+    input_text = request.form['input_text']
 
-        file = request.files['audio_file']
-
-        if file.filename == '':
-            return redirect(request.url)
-
-        if file and allowed_file(file.filename):
-            # Save the uploaded file
-            audio_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-            file.save(audio_path)
-
-            # Convert audio to WAV format
-            wav_path = convert_audio_to_wav(audio_path)
-
-            # Convert WAV to text
-            text = convert_audio_to_text(wav_path)
-
-            # Save the generated text to a file
-            text_file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'output.txt')
-            with open(text_file_path, 'w', encoding='utf-8') as text_file:
-                text_file.write(text)
-
-            return render_template('index.html', text=text)
-
-    return render_template('index.html', text=None)
-
-@app.route('/download_text')
-def download_text():
-    text_file_path = os.path.join(app.config['UPLOAD_FOLDER'], 'output.txt')
-    return send_file(text_file_path, as_attachment=True)
-
+    if input_text:
+        # Generate the summary
+        output = summarizer(input_text, max_length=150, min_length=30, do_sample=False)
+        summary = output[0]['summary_text']
+        return render_template("index.html", summary=summary)
+    else:
+        return render_template("index.html", error="Please provide text to summarize")
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run()
